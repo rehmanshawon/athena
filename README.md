@@ -1,6 +1,6 @@
-# ScreenSolver
+# Athena
 
-ScreenSolver is a transparent personal macOS utility that captures the primary display with a menu-bar command or `Command + Shift + Y`, uploads the screenshot to a local backend, and shows the AI result in a mobile-friendly web app.
+Athena is a transparent personal macOS utility plus API and mobile-friendly web viewer. The macOS app captures the primary display with a menu-bar command or `Command + Shift + Y`, uploads the screenshot to the API, and the web app displays the AI-generated result.
 
 It does not bypass permissions or run stealthily. The macOS app uses normal Screen Recording permission and always has menu-bar presence.
 
@@ -8,9 +8,10 @@ It does not bypass permissions or run stealthily. The macOS app uses normal Scre
 
 ```text
 apps/
-  mac/ScreenSolver/      Swift source files for an Xcode macOS App target
-  backend/               Express + TypeScript API
-  web/                   React + Vite + Tailwind frontend
+  athena-api/            Express + TypeScript API
+  athena-web/            React + Vite + Tailwind frontend
+  mac/athena-mac/        Swift source files for the macOS app
+deploy/
 README.md
 .env.example
 ```
@@ -19,7 +20,7 @@ README.md
 
 Create local env files from `.env.example`.
 
-For backend:
+For the API:
 
 ```bash
 cp .env.example .env
@@ -27,17 +28,18 @@ cp .env.example .env
 
 Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4o`.
 
-For web, either export `VITE_BACKEND_URL` before starting Vite or create `apps/web/.env`:
+For the web app, either export `VITE_API_URL` before starting Vite or create `apps/athena-web/.env`:
 
 ```bash
-VITE_BACKEND_URL=http://localhost:4000
+VITE_API_URL=http://localhost:4000
+VITE_BASE_PATH=/
 ```
 
-## Backend
+## API
 
 ```bash
-npm install --prefix apps/backend
-npm run dev:backend
+npm install --prefix apps/athena-api
+npm run dev:api
 ```
 
 Health check:
@@ -46,12 +48,12 @@ Health check:
 curl http://localhost:4000/api/health
 ```
 
-The backend stores uploads in `apps/backend/uploads` and session JSON files in `apps/backend/data/sessions`.
+The API stores uploads in `apps/athena-api/uploads` and session JSON files in `apps/athena-api/data/sessions`.
 
 ## Web
 
 ```bash
-npm install --prefix apps/web
+npm install --prefix apps/athena-web
 npm run dev:web
 ```
 
@@ -64,13 +66,13 @@ The page polls every 2 seconds while a session is processing.
 
 ## macOS App Setup
 
-1. Open Xcode and create a new **macOS App** target named `ScreenSolver`.
-2. Use SwiftUI for the interface and Swift as the language.
-3. Delete the generated app/content source files or keep the target and add all files from `apps/mac/ScreenSolver`.
-4. Ensure `ScreenSolverApp.swift` is the only file containing `@main`.
-5. In **Signing & Capabilities**, enable **App Sandbox** only if you also configure the needed network/client behavior for your local development target. For easiest local MVP testing, run unsigned/debug without sandbox restrictions.
-6. Add `NSHumanReadableCopyright` or bundle metadata as desired.
-7. Run the app from Xcode.
+An Xcode project is generated separately at:
+
+```text
+/Users/rehman/Workspace/XCode_Projects/athena-mac
+```
+
+If you create a fresh Xcode target, add all files from `apps/mac/athena-mac` and ensure `AthenaMacApp.swift` is the only file containing `@main`.
 
 ## Screen Recording Permission
 
@@ -78,12 +80,12 @@ The first capture/check may fail until permission is granted:
 
 1. Open **System Settings**.
 2. Go to **Privacy & Security** -> **Screen & System Audio Recording** or **Screen Recording**.
-3. Enable the built app or Xcode-run app.
-4. Quit and relaunch ScreenSolver.
+3. Enable the built Athena app.
+4. Quit and relaunch Athena.
 
 ## macOS Usage
 
-Start the backend first, then run the macOS app.
+Start the API first, then run the macOS app.
 
 Menu-bar commands:
 
@@ -93,25 +95,25 @@ Menu-bar commands:
 - **Settings**: opens a small status/settings window.
 - **Quit**: exits the app.
 
-Default backend URL is `http://localhost:4000`. You can change it in the Settings window. The global hotkey is `Command + Shift + Y`.
+Default API URL is `http://localhost:4000`. You can change it in the Settings window. The global hotkey is `Command + Shift + Y`.
 
 ## Production Deployment
 
-This repo includes a GitHub Actions workflow for EC2 deployment:
+This repo includes GitHub Actions deployment for EC2:
 
-- Workflow: `.github/workflows/deploy-screensolver.yml`
+- Workflow: `.github/workflows/deploy-athena.yml`
 - PM2 config: `ecosystem.config.cjs`
-- Nginx route snippet: `deploy/nginx-screensolver.conf`
+- Nginx route snippet: `deploy/nginx-athena.conf`
 - Production env template: `deploy/production.env.example`
 
 The workflow deploys to:
 
-- App/backend source: `/home/ubuntu/screensolver`
-- Static web output: `/home/ubuntu/payment_gateway_demo/screensolver`
-- PM2 process: `screensolver-backend`
-- Backend port: `8000`
-- Web route: `https://www.ilogicmagic.com/screensolver/latest`
-- API route: `https://www.ilogicmagic.com/screensolver-api/api/health`
+- App/API source: `/home/ubuntu/athena`
+- Static web output: `/home/ubuntu/payment_gateway_demo/athena`
+- PM2 process: `athena-api`
+- API port: `8000`
+- Web route: `https://www.ilogicmagic.com/athena/latest`
+- API route: `https://www.ilogicmagic.com/athena-api/api/health`
 
 Add this GitHub repository secret:
 
@@ -125,24 +127,24 @@ Use the private key contents from your EC2 key file, not the path. On your Mac:
 cat ~/Downloads/ilm_ubuntu_key.pem
 ```
 
-On the EC2 server, create `/home/ubuntu/screensolver/.env` after the first deploy:
+On the EC2 server, create `/home/ubuntu/athena/.env` after the first deploy:
 
 ```bash
 OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-4o
 PORT=8000
-WEB_BASE_URL=https://www.ilogicmagic.com/screensolver
+WEB_BASE_URL=https://www.ilogicmagic.com/athena
 ```
 
-Add the contents of `deploy/nginx-screensolver.conf` inside the existing Nginx server block at `/etc/nginx/sites-available/payment-demo`, then test and reload:
+Add the contents of `deploy/nginx-athena.conf` inside the existing Nginx server block at `/etc/nginx/sites-available/payment-demo`, then test and reload:
 
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-In the macOS app Settings window, set Backend URL to:
+In the macOS app Settings window, set Athena API URL to:
 
 ```text
-https://www.ilogicmagic.com/screensolver-api
+https://www.ilogicmagic.com/athena-api
 ```

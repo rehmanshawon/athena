@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ScreenSolverApp: App {
+struct AthenaMacApp: App {
     @NSApplicationDelegateAdaptor(MenuBarController.self) private var appDelegate
 
     var body: some Scene {

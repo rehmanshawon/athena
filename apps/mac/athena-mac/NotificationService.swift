@@ -13,7 +13,7 @@ enum NotificationService {
         content.sound = .default
 
         let request = UNNotificationRequest(
-            identifier: "screensolver-\(UUID().uuidString)",
+            identifier: "athena-\(UUID().uuidString)",
             content: content,
             trigger: nil
         )

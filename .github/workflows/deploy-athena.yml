@@ -1,4 +1,4 @@
-name: Deploy ScreenSolver
+name: Deploy Athena
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: screensolver-production
+  group: athena-production
   cancel-in-progress: false
 
 jobs:
@@ -16,11 +16,11 @@ jobs:
     env:
       EC2_HOST: ec2-13-127-219-128.ap-south-1.compute.amazonaws.com
       EC2_USER: ubuntu
-      APP_DIR: /home/ubuntu/screensolver
-      WEB_DIR: /home/ubuntu/payment_gateway_demo/screensolver
-      BACKEND_PORT: "8000"
-      PUBLIC_WEB_URL: https://www.ilogicmagic.com/screensolver
-      PUBLIC_API_URL: https://www.ilogicmagic.com/screensolver-api
+      APP_DIR: /home/ubuntu/athena
+      WEB_DIR: /home/ubuntu/payment_gateway_demo/athena
+      API_PORT: "8000"
+      PUBLIC_WEB_URL: https://www.ilogicmagic.com/athena
+      PUBLIC_API_URL: https://www.ilogicmagic.com/athena-api
 
     steps:
       - name: Checkout
@@ -30,14 +30,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/screensolver_key
-          chmod 600 ~/.ssh/screensolver_key
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/athena_key
+          chmod 600 ~/.ssh/athena_key
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
       - name: Ensure remote directories
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/screensolver_key "$EC2_USER@$EC2_HOST" \
+          ssh -i ~/.ssh/athena_key "$EC2_USER@$EC2_HOST" \
             "mkdir -p '$APP_DIR' '$WEB_DIR'"
 
       - name: Upload repository to EC2
@@ -49,16 +49,16 @@ jobs:
             --exclude 'node_modules' \
             --exclude 'dist' \
             --exclude 'DerivedData' \
-            --exclude 'apps/backend/uploads/*' \
-            --exclude 'apps/backend/data/sessions/*' \
-            -e "ssh -i ~/.ssh/screensolver_key" \
+            --exclude 'apps/athena-api/uploads/*' \
+            --exclude 'apps/athena-api/data/sessions/*' \
+            -e "ssh -i ~/.ssh/athena_key" \
             ./ "$EC2_USER@$EC2_HOST:$APP_DIR/"
 
       - name: Build and restart on EC2
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/screensolver_key "$EC2_USER@$EC2_HOST" \
-            "APP_DIR='$APP_DIR' WEB_DIR='$WEB_DIR' BACKEND_PORT='$BACKEND_PORT' PUBLIC_WEB_URL='$PUBLIC_WEB_URL' PUBLIC_API_URL='$PUBLIC_API_URL' bash -s" <<'REMOTE'
+          ssh -i ~/.ssh/athena_key "$EC2_USER@$EC2_HOST" \
+            "APP_DIR='$APP_DIR' WEB_DIR='$WEB_DIR' API_PORT='$API_PORT' PUBLIC_WEB_URL='$PUBLIC_WEB_URL' PUBLIC_API_URL='$PUBLIC_API_URL' bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd "$APP_DIR"
@@ -73,24 +73,24 @@ jobs:
           set +a
 
           export NODE_ENV=production
-          export PORT="${PORT:-$BACKEND_PORT}"
+          export PORT="${PORT:-$API_PORT}"
           export WEB_BASE_URL="${WEB_BASE_URL:-$PUBLIC_WEB_URL}"
           export OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
 
-          mkdir -p apps/backend/uploads apps/backend/data/sessions "$WEB_DIR"
+          mkdir -p apps/athena-api/uploads apps/athena-api/data/sessions "$WEB_DIR"
 
-          npm ci --prefix apps/backend
-          npm ci --prefix apps/web
+          npm ci --prefix apps/athena-api
+          npm ci --prefix apps/athena-web
 
-          npm --prefix apps/backend run build
-          VITE_BACKEND_URL="$PUBLIC_API_URL" VITE_BASE_PATH="/screensolver/" npm --prefix apps/web run build
+          npm --prefix apps/athena-api run build
+          VITE_API_URL="$PUBLIC_API_URL" VITE_BASE_PATH="/athena/" npm --prefix apps/athena-web run build
 
-          rsync -a --delete apps/web/dist/ "$WEB_DIR/"
+          rsync -a --delete apps/athena-web/dist/ "$WEB_DIR/"
 
-          pm2 startOrReload ecosystem.config.cjs --only screensolver-backend --update-env
+          pm2 startOrReload ecosystem.config.cjs --only athena-api --update-env
           pm2 save
 
-          echo "ScreenSolver deployed:"
+          echo "Athena deployed:"
           echo "  Web: $PUBLIC_WEB_URL/latest"
           echo "  API: $PUBLIC_API_URL/api/health"
 REMOTE

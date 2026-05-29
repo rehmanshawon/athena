@@ -11,7 +11,7 @@ struct ContentView: View {
                 Image(systemName: "sparkles.rectangle.stack")
                     .font(.title2)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ScreenSolver")
+                    Text("Athena")
                         .font(.title2)
                         .fontWeight(.semibold)
                     Text("Command + Shift + Y captures your primary display.")
@@ -20,9 +20,9 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Backend URL")
+                Text("Athena API URL")
                     .font(.headline)
-                TextField("http://localhost:4000", text: $settings.backendURL)
+                TextField("http://localhost:4000", text: $settings.apiURL)
                     .textFieldStyle(.roundedBorder)
             }
 

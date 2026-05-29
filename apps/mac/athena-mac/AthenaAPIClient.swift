@@ -1,16 +1,16 @@
 import Foundation
 
-enum BackendClientError: LocalizedError {
-    case invalidBackendURL
+enum AthenaAPIClientError: LocalizedError {
+    case invalidAPIURL
     case invalidResponse
     case serverError(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidBackendURL:
-            return "Backend URL is invalid."
+        case .invalidAPIURL:
+            return "Athena API URL is invalid."
         case .invalidResponse:
-            return "Backend returned an invalid response."
+            return "Athena API returned an invalid response."
         case .serverError(let message):
             return message
         }
@@ -30,10 +30,10 @@ struct SolverSession: Decodable {
     let error: String?
 }
 
-final class BackendClient {
-    func uploadScreenshot(_ imageData: Data, backendURL: String) async throws -> CaptureUploadResponse {
-        guard let url = endpointURL(backendURL: backendURL, path: "api/captures") else {
-            throw BackendClientError.invalidBackendURL
+final class AthenaAPIClient {
+    func uploadScreenshot(_ imageData: Data, apiURL: String) async throws -> CaptureUploadResponse {
+        guard let url = endpointURL(apiURL: apiURL, path: "api/captures") else {
+            throw AthenaAPIClientError.invalidAPIURL
         }
 
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -44,32 +44,32 @@ final class BackendClient {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw BackendClientError.invalidResponse
+            throw AthenaAPIClientError.invalidResponse
         }
 
         guard (200...299).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? "Upload failed with status \(http.statusCode)."
-            throw BackendClientError.serverError(message)
+            throw AthenaAPIClientError.serverError(message)
         }
 
         return try JSONDecoder().decode(CaptureUploadResponse.self, from: data)
     }
 
-    func fetchSession(sessionId: String, backendURL: String) async throws -> SolverSession {
-        guard let url = endpointURL(backendURL: backendURL, path: "api/sessions/\(sessionId)") else {
-            throw BackendClientError.invalidBackendURL
+    func fetchSession(sessionId: String, apiURL: String) async throws -> SolverSession {
+        guard let url = endpointURL(apiURL: apiURL, path: "api/sessions/\(sessionId)") else {
+            throw AthenaAPIClientError.invalidAPIURL
         }
 
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw BackendClientError.invalidResponse
+            throw AthenaAPIClientError.invalidResponse
         }
 
         return try JSONDecoder().decode(SolverSession.self, from: data)
     }
 
-    private func endpointURL(backendURL: String, path: String) -> URL? {
-        let base = backendURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    private func endpointURL(apiURL: String, path: String) -> URL? {
+        let base = apiURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return URL(string: "\(base)/\(path)")
     }
 

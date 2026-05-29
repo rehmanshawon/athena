@@ -3,12 +3,12 @@ dist/
 .env
 .DS_Store
 
-apps/backend/uploads/*
-!apps/backend/uploads/.gitkeep
-apps/backend/data/sessions/*
-!apps/backend/data/sessions/.gitkeep
+apps/athena-api/uploads/*
+!apps/athena-api/uploads/.gitkeep
+apps/athena-api/data/sessions/*
+!apps/athena-api/data/sessions/.gitkeep
 
-apps/web/.env
+apps/athena-web/.env
 DerivedData/
 xcode_project_staging/
 *.xcuserdata/

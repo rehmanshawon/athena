@@ -7,7 +7,7 @@ import SwiftUI
 final class MenuBarController: NSObject, NSApplicationDelegate {
     private let settings = AppSettings.shared
     private let captureService = ScreenCaptureService()
-    private let backendClient = BackendClient()
+    private let apiClient = AthenaAPIClient()
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var hotKeyManager: HotKeyManager?
@@ -29,11 +29,11 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let image = NSImage(systemSymbolName: "sparkles.rectangle.stack", accessibilityDescription: "ScreenSolver") {
+        if let image = NSImage(systemSymbolName: "sparkles.rectangle.stack", accessibilityDescription: "Athena") {
             item.button?.image = image
             item.button?.imagePosition = .imageOnly
         } else {
-            item.button?.title = "SS"
+            item.button?.title = "A"
         }
 
         let menu = NSMenu()
@@ -80,13 +80,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                     throw ScreenCaptureError.emptyScreenshot
                 }
 
-                NotificationService.show(title: "ScreenSolver", body: "Processing started")
+                NotificationService.show(title: "Athena", body: "Processing started")
 
                 await MainActor.run {
                     settings.statusMessage = "Uploading screenshot..."
                 }
 
-                let response = try await backendClient.uploadScreenshot(screenshot, backendURL: settings.backendURL)
+                let response = try await apiClient.uploadScreenshot(screenshot, apiURL: settings.apiURL)
                 await MainActor.run {
                     settings.latestResultURL = response.webUrl
                     settings.statusMessage = "Processing session \(response.sessionId)..."
@@ -98,7 +98,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                     settings.statusMessage = "Failed: \(error.localizedDescription)"
                     settings.isProcessing = false
                 }
-                NotificationService.show(title: "ScreenSolver failed", body: error.localizedDescription)
+                NotificationService.show(title: "Athena failed", body: error.localizedDescription)
             }
         }
     }
@@ -106,13 +106,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private func pollSessionUntilFinished(sessionId: String) async throws {
         for _ in 0..<90 {
             try await Task.sleep(nanoseconds: 2_000_000_000)
-            let session = try await backendClient.fetchSession(sessionId: sessionId, backendURL: settings.backendURL)
+            let session = try await apiClient.fetchSession(sessionId: sessionId, apiURL: settings.apiURL)
             if session.status == "completed" {
                 await MainActor.run {
                     settings.statusMessage = "Result ready"
                     settings.isProcessing = false
                 }
-                NotificationService.show(title: "ScreenSolver", body: "Result ready")
+                NotificationService.show(title: "Athena", body: "Result ready")
                 return
             }
 
@@ -122,7 +122,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                     settings.statusMessage = "Failed: \(message)"
                     settings.isProcessing = false
                 }
-                NotificationService.show(title: "ScreenSolver failed", body: message)
+                NotificationService.show(title: "Athena failed", body: message)
                 return
             }
         }
@@ -135,7 +135,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     @objc private func openLatestResult() {
         guard let value = settings.latestResultURL, let url = URL(string: value) else {
-            NotificationService.show(title: "ScreenSolver", body: "No result has been captured yet.")
+            NotificationService.show(title: "Athena", body: "No result has been captured yet.")
             return
         }
         NSWorkspace.shared.open(url)
@@ -148,14 +148,14 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     settings.statusMessage = "Screen Recording permission granted"
                 }
-                NotificationService.show(title: "ScreenSolver", body: "Screen Recording permission granted")
+                NotificationService.show(title: "Athena", body: "Screen Recording permission granted")
             case .failure(let error):
                 await MainActor.run {
                     settings.statusMessage = "Permission missing: \(error.localizedDescription)"
                 }
                 NotificationService.show(
                     title: "Screen Recording permission required",
-                    body: "Enable ScreenSolver in System Settings > Privacy & Security > Screen Recording, then relaunch."
+                    body: "Enable Athena in System Settings > Privacy & Security > Screen Recording, then relaunch."
                 )
             }
         }
@@ -169,7 +169,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "ScreenSolver Settings"
+            window.title = "Athena Settings"
             window.contentView = NSHostingView(rootView: ContentView(settings: settings))
             window.center()
             settingsWindow = window
@@ -216,7 +216,7 @@ private final class HotKeyManager {
             return noErr
         }, 1, &eventType, userData, &eventHandler)
 
-        let hotKeyID = EventHotKeyID(signature: fourCharCode("SSHK"), id: 1)
+        let hotKeyID = EventHotKeyID(signature: fourCharCode("ATHN"), id: 1)
         RegisterEventHotKey(
             UInt32(kVK_ANSI_Y),
             UInt32(cmdKey | shiftKey),

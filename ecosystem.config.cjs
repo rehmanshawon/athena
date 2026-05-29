@@ -1,8 +1,8 @@
 module.exports = {
   apps: [
     {
-      name: "screensolver-backend",
-      cwd: "/home/ubuntu/screensolver/apps/backend",
+      name: "athena-api",
+      cwd: "/home/ubuntu/athena/apps/athena-api",
       script: "dist/server.js",
       interpreter: "node",
       instances: 1,
@@ -12,7 +12,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: "8000",
-        WEB_BASE_URL: "https://www.ilogicmagic.com/screensolver",
+        WEB_BASE_URL: "https://www.ilogicmagic.com/athena",
         OPENAI_MODEL: "gpt-4o"
       }
     }

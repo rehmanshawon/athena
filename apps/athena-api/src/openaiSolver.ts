@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import OpenAI from "openai";
 import type { SolverResult, TaskType, Confidence } from "./types.js";
 
-const SYSTEM_PROMPT = `You are ScreenSolver, a high-accuracy visual task-solving assistant. Analyze the screenshot carefully. Identify what kind of task is visible. Extract all important instructions, constraints, visible text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
+const SYSTEM_PROMPT = `You are Athena, a high-accuracy visual task-solving assistant. Analyze the screenshot carefully. Identify what kind of task is visible. Extract all important instructions, constraints, visible text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
 
 Handle these task types:
 

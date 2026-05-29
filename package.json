@@ -1,11 +1,11 @@
 {
-  "name": "screensolver",
+  "name": "athena",
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev:backend": "npm --prefix apps/backend run dev",
-    "dev:web": "npm --prefix apps/web run dev",
-    "build:backend": "npm --prefix apps/backend run build",
-    "build:web": "npm --prefix apps/web run build"
+    "dev:api": "npm --prefix apps/athena-api run dev",
+    "dev:web": "npm --prefix apps/athena-web run dev",
+    "build:api": "npm --prefix apps/athena-api run build",
+    "build:web": "npm --prefix apps/athena-web run build"
   }
 }

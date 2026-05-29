@@ -11,15 +11,15 @@ import { getLatestSession, getSession, saveSession } from "./sessionStore.js";
 import { solveScreenshot } from "./openaiSolver.js";
 import type { SolverSession } from "./types.js";
 
-const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-dotenv.config({ path: path.resolve(backendRoot, "../../.env") });
+dotenv.config({ path: path.resolve(apiRoot, "../../.env") });
 dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const webBaseUrl = process.env.WEB_BASE_URL || "http://localhost:5173";
-const uploadsDir = path.resolve(backendRoot, "uploads");
+const uploadsDir = path.resolve(apiRoot, "uploads");
 
 await fs.mkdir(uploadsDir, { recursive: true });
 
@@ -48,7 +48,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "screensolver-backend" });
+  res.json({ ok: true, service: "athena-api" });
 });
 
 app.post("/api/captures", upload.single("screenshot"), async (req, res, next) => {
@@ -105,7 +105,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 });
 
 app.listen(port, () => {
-  console.log(`ScreenSolver backend listening on http://localhost:${port}`);
+  console.log(`Athena API listening on http://localhost:${port}`);
 });
 
 async function processSession(session: SolverSession, imagePath: string) {

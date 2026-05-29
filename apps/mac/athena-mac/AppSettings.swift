@@ -5,8 +5,8 @@ import Foundation
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    @Published var backendURL: String {
-        didSet { UserDefaults.standard.set(backendURL, forKey: Keys.backendURL) }
+    @Published var apiURL: String {
+        didSet { UserDefaults.standard.set(apiURL, forKey: Keys.apiURL) }
     }
 
     @Published var latestResultURL: String? {
@@ -17,13 +17,13 @@ final class AppSettings: ObservableObject {
     @Published var isProcessing: Bool = false
 
     private enum Keys {
-        static let backendURL = "ScreenSolver.backendURL"
-        static let latestResultURL = "ScreenSolver.latestResultURL"
+        static let apiURL = "Athena.apiURL"
+        static let latestResultURL = "Athena.latestResultURL"
     }
 
     private init() {
-        let envURL = ProcessInfo.processInfo.environment["MAC_BACKEND_URL"]
-        backendURL = UserDefaults.standard.string(forKey: Keys.backendURL) ?? envURL ?? "http://localhost:4000"
+        let envURL = ProcessInfo.processInfo.environment["MAC_API_URL"]
+        apiURL = UserDefaults.standard.string(forKey: Keys.apiURL) ?? envURL ?? "http://localhost:4000"
         latestResultURL = UserDefaults.standard.string(forKey: Keys.latestResultURL)
     }
 }

@@ -18,7 +18,7 @@ interface SolverSession {
   error: string | null;
 }
 
-const backendUrl = (import.meta.env.VITE_BACKEND_URL || "http://localhost:4000").replace(/\/$/, "");
+const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 const basePath = normalizeBasePath(import.meta.env.BASE_URL);
 
 function App() {
@@ -34,7 +34,7 @@ function App() {
     try {
       setError(null);
       const endpoint = mode === "latest" ? "/api/sessions/latest" : `/api/sessions/${sessionId}`;
-      const response = await fetch(`${backendUrl}${endpoint}`);
+      const response = await fetch(`${apiUrl}${endpoint}`);
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || `Request failed: ${response.status}`);
@@ -74,7 +74,7 @@ function App() {
       <section className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5 sm:px-6">
         <header className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal">ScreenSolver</h1>
+            <h1 className="text-2xl font-semibold tracking-normal">Athena</h1>
             <p className="mt-1 text-sm text-stone-600">Latest visual task result</p>
           </div>
           <button className="iconButton" onClick={() => void load()} aria-label="Refresh latest">

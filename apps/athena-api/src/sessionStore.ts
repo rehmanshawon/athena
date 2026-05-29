@@ -3,8 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SolverSession } from "./types.js";
 
-const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sessionsDir = path.resolve(backendRoot, "data", "sessions");
+const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const sessionsDir = path.resolve(apiRoot, "data", "sessions");
 
 export async function ensureSessionStorage() {
   await fs.mkdir(sessionsDir, { recursive: true });

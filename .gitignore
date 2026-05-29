@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.DS_Store
+
+apps/backend/uploads/*
+!apps/backend/uploads/.gitkeep
+apps/backend/data/sessions/*
+!apps/backend/data/sessions/.gitkeep
+
+apps/web/.env
+DerivedData/
+xcode_project_staging/
+*.xcuserdata/

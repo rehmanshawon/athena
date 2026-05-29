@@ -1,0 +1,101 @@
+name: Deploy ScreenSolver
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: screensolver-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ec2-13-127-219-128.ap-south-1.compute.amazonaws.com
+      EC2_USER: ubuntu
+      APP_DIR: /home/ubuntu/screensolver
+      WEB_DIR: /home/ubuntu/payment_gateway_demo/screensolver
+      BACKEND_PORT: "8000"
+      PUBLIC_WEB_URL: https://www.ilogicmagic.com/screensolver
+      PUBLIC_API_URL: https://www.ilogicmagic.com/screensolver-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/screensolver_key
+          chmod 600 ~/.ssh/screensolver_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote directories
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/screensolver_key "$EC2_USER@$EC2_HOST" \
+            "mkdir -p '$APP_DIR' '$WEB_DIR'"
+
+      - name: Upload repository to EC2
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude 'node_modules' \
+            --exclude 'dist' \
+            --exclude 'DerivedData' \
+            --exclude 'apps/backend/uploads/*' \
+            --exclude 'apps/backend/data/sessions/*' \
+            -e "ssh -i ~/.ssh/screensolver_key" \
+            ./ "$EC2_USER@$EC2_HOST:$APP_DIR/"
+
+      - name: Build and restart on EC2
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/screensolver_key "$EC2_USER@$EC2_HOST" \
+            "APP_DIR='$APP_DIR' WEB_DIR='$WEB_DIR' BACKEND_PORT='$BACKEND_PORT' PUBLIC_WEB_URL='$PUBLIC_WEB_URL' PUBLIC_API_URL='$PUBLIC_API_URL' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$APP_DIR"
+
+          if [ ! -f .env ]; then
+            cp deploy/production.env.example .env
+            echo "Created $APP_DIR/.env. Set OPENAI_API_KEY before first real capture."
+          fi
+
+          set -a
+          . ./.env
+          set +a
+
+          export NODE_ENV=production
+          export PORT="${PORT:-$BACKEND_PORT}"
+          export WEB_BASE_URL="${WEB_BASE_URL:-$PUBLIC_WEB_URL}"
+          export OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
+
+          mkdir -p apps/backend/uploads apps/backend/data/sessions "$WEB_DIR"
+
+          npm ci --prefix apps/backend
+          npm ci --prefix apps/web
+
+          npm --prefix apps/backend run build
+          VITE_BACKEND_URL="$PUBLIC_API_URL" VITE_BASE_PATH="/screensolver/" npm --prefix apps/web run build
+
+          rsync -a --delete apps/web/dist/ "$WEB_DIR/"
+
+          pm2 startOrReload ecosystem.config.cjs --only screensolver-backend --update-env
+          pm2 save
+
+          echo "ScreenSolver deployed:"
+          echo "  Web: $PUBLIC_WEB_URL/latest"
+          echo "  API: $PUBLIC_API_URL/api/health"
+REMOTE
+
+      - name: Verify public health endpoint
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent "$PUBLIC_API_URL/api/health"

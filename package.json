@@ -1,0 +1,11 @@
+{
+  "name": "screensolver",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:backend": "npm --prefix apps/backend run dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:backend": "npm --prefix apps/backend run build",
+    "build:web": "npm --prefix apps/web run build"
+  }
+}

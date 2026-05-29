@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import Combine
 import Foundation
 import SwiftUI
 
@@ -11,16 +12,19 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var hotKeyManager: HotKeyManager?
+    private var autoCaptureTask: Task<Void, Never>?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        NotificationService.requestAuthorization()
         configureStatusItem()
         hotKeyManager = HotKeyManager { [weak self] in
             Task { @MainActor in
                 self?.captureNow()
             }
         }
+        observeAutoCaptureSettings()
+        updateAutoCaptureTask()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.openSettings()
@@ -37,7 +41,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Capture Now", action: #selector(captureMenuItem), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Capture Now (⌘⇧Y)", action: #selector(captureMenuItem), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Latest Result", action: #selector(openLatestResult), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Check Permission", action: #selector(checkPermission), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
@@ -58,48 +62,77 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     private func captureNow() {
+        Task { await performCapture() }
+    }
+
+    private func observeAutoCaptureSettings() {
+        settings.$autoCaptureEnabled
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.updateAutoCaptureTask() }
+            }
+            .store(in: &cancellables)
+
+        settings.$autoCaptureIntervalSeconds
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.updateAutoCaptureTask() }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updateAutoCaptureTask() {
+        autoCaptureTask?.cancel()
+        autoCaptureTask = nil
+
+        guard settings.autoCaptureEnabled else { return }
+
+        autoCaptureTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let seconds = await MainActor.run { self.settings.safeAutoCaptureIntervalSeconds }
+                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+
+                if Task.isCancelled { return }
+                await self.performCapture()
+            }
+        }
+    }
+
+    private func performCapture() async {
         guard !settings.isProcessing else { return }
         settings.isProcessing = true
         settings.statusMessage = "Checking Screen Recording permission..."
 
-        Task {
-            do {
-                switch await PermissionService.checkScreenRecordingPermission() {
-                case .success:
-                    break
-                case .failure(let error):
-                    throw error
-                }
-
-                await MainActor.run {
-                    settings.statusMessage = "Capturing screenshot..."
-                }
-
-                let screenshot = try await captureService.capturePrimaryDisplayPNG()
-                guard !screenshot.isEmpty else {
-                    throw ScreenCaptureError.emptyScreenshot
-                }
-
-                NotificationService.show(title: "Athena", body: "Processing started")
-
-                await MainActor.run {
-                    settings.statusMessage = "Uploading screenshot..."
-                }
-
-                let response = try await apiClient.uploadScreenshot(screenshot, apiURL: settings.apiURL)
-                await MainActor.run {
-                    settings.latestResultURL = response.webUrl
-                    settings.statusMessage = "Processing session \(response.sessionId)..."
-                }
-
-                try await pollSessionUntilFinished(sessionId: response.sessionId)
-            } catch {
-                await MainActor.run {
-                    settings.statusMessage = "Failed: \(error.localizedDescription)"
-                    settings.isProcessing = false
-                }
-                NotificationService.show(title: "Athena failed", body: error.localizedDescription)
+        do {
+            switch await PermissionService.checkScreenRecordingPermission() {
+            case .success:
+                break
+            case .failure(let error):
+                throw error
             }
+
+            settings.statusMessage = "Capturing screenshot..."
+
+            let screenshot = try await captureService.capturePrimaryDisplayPNG()
+            guard !screenshot.isEmpty else {
+                throw ScreenCaptureError.emptyScreenshot
+            }
+
+            settings.statusMessage = "Uploading screenshot..."
+
+            let response = try await apiClient.uploadScreenshot(
+                screenshot,
+                apiURL: settings.apiURL,
+                codingStack: settings.codingStack
+            )
+            settings.latestResultURL = response.webUrl
+            settings.statusMessage = "Processing session \(response.sessionId)..."
+
+            try await pollSessionUntilFinished(sessionId: response.sessionId)
+        } catch {
+            settings.statusMessage = "Failed: \(error.localizedDescription)"
+            settings.isProcessing = false
         }
     }
 
@@ -108,34 +141,26 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             try await Task.sleep(nanoseconds: 2_000_000_000)
             let session = try await apiClient.fetchSession(sessionId: sessionId, apiURL: settings.apiURL)
             if session.status == "completed" {
-                await MainActor.run {
-                    settings.statusMessage = "Result ready"
-                    settings.isProcessing = false
-                }
-                NotificationService.show(title: "Athena", body: "Result ready")
+                settings.statusMessage = "Result ready"
+                settings.isProcessing = false
                 return
             }
 
             if session.status == "failed" {
                 let message = session.error ?? "Processing failed"
-                await MainActor.run {
-                    settings.statusMessage = "Failed: \(message)"
-                    settings.isProcessing = false
-                }
-                NotificationService.show(title: "Athena failed", body: message)
+                settings.statusMessage = "Failed: \(message)"
+                settings.isProcessing = false
                 return
             }
         }
 
-        await MainActor.run {
-            settings.statusMessage = "Still processing. Open the result page to continue watching."
-            settings.isProcessing = false
-        }
+        settings.statusMessage = "Still processing. Open the result page to continue watching."
+        settings.isProcessing = false
     }
 
     @objc private func openLatestResult() {
         guard let value = settings.latestResultURL, let url = URL(string: value) else {
-            NotificationService.show(title: "Athena", body: "No result has been captured yet.")
+            settings.statusMessage = "No result has been captured yet."
             return
         }
         NSWorkspace.shared.open(url)
@@ -148,15 +173,10 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     settings.statusMessage = "Screen Recording permission granted"
                 }
-                NotificationService.show(title: "Athena", body: "Screen Recording permission granted")
             case .failure(let error):
                 await MainActor.run {
                     settings.statusMessage = "Permission missing: \(error.localizedDescription)"
                 }
-                NotificationService.show(
-                    title: "Screen Recording permission required",
-                    body: "Enable Athena in System Settings > Privacy & Security > Screen Recording, then relaunch."
-                )
             }
         }
     }
@@ -164,7 +184,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 270),
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 410),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false

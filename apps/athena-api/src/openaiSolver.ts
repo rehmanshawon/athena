@@ -2,6 +2,10 @@ import { promises as fs } from "node:fs";
 import OpenAI from "openai";
 import type { SolverResult, TaskType, Confidence } from "./types.js";
 
+interface SolverOptions {
+  codingStack: string;
+}
+
 const SYSTEM_PROMPT = `You are Athena, a high-accuracy visual task-solving assistant. Analyze the screenshot carefully. Identify what kind of task is visible. Extract all important instructions, constraints, visible text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
 
 Handle these task types:
@@ -47,7 +51,10 @@ const taskTypes = new Set<TaskType>([
 
 const confidences = new Set<Confidence>(["low", "medium", "high"]);
 
-export async function solveScreenshot(imagePath: string): Promise<SolverResult & { rawModelOutput: string }> {
+export async function solveScreenshot(
+  imagePath: string,
+  options: SolverOptions
+): Promise<SolverResult & { rawModelOutput: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
@@ -68,7 +75,14 @@ export async function solveScreenshot(imagePath: string): Promise<SolverResult &
       {
         role: "user",
         content: [
-          { type: "input_text", text: "Solve the task visible in this screenshot. Return valid JSON only." },
+          {
+            type: "input_text",
+            text: [
+              "Solve the task visible in this screenshot. Return valid JSON only.",
+              `If the visible task is a coding challenge, use this requested language or stack for the solution: ${options.codingStack}.`,
+              "If the screenshot explicitly requires a different language, follow the screenshot and mention the conflict briefly in the explanation."
+            ].join("\n")
+          },
           { type: "input_image", image_url: imageUrl, detail: "auto" }
         ]
       }

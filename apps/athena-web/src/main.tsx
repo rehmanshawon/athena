@@ -9,6 +9,7 @@ interface SolverSession {
   id: string;
   createdAt: string;
   status: SessionStatus;
+  codingStack: string;
   taskType: string;
   confidence: string;
   finalAnswer: string;
@@ -90,6 +91,7 @@ function App() {
               <Badge label={session.status} status={session.status} />
               <Badge label={session.taskType} />
               <Badge label={`${session.confidence} confidence`} />
+              {session.taskType === "CODING" ? <Badge label={session.codingStack} /> : null}
             </div>
 
             <Panel title="Final Answer" body={session.error || session.finalAnswer || "Waiting for the result..."} prominent />

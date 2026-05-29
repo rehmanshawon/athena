@@ -14,6 +14,7 @@ export interface SolverSession {
   id: string;
   createdAt: string;
   status: SessionStatus;
+  codingStack: string;
   taskType: TaskType;
   confidence: Confidence;
   finalAnswer: string;

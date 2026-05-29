@@ -31,7 +31,7 @@ struct SolverSession: Decodable {
 }
 
 final class AthenaAPIClient {
-    func uploadScreenshot(_ imageData: Data, apiURL: String) async throws -> CaptureUploadResponse {
+    func uploadScreenshot(_ imageData: Data, apiURL: String, codingStack: String) async throws -> CaptureUploadResponse {
         guard let url = endpointURL(apiURL: apiURL, path: "api/captures") else {
             throw AthenaAPIClientError.invalidAPIURL
         }
@@ -40,7 +40,7 @@ final class AthenaAPIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = makeMultipartBody(imageData: imageData, boundary: boundary)
+        request.httpBody = makeMultipartBody(imageData: imageData, boundary: boundary, codingStack: codingStack)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -73,14 +73,22 @@ final class AthenaAPIClient {
         return URL(string: "\(base)/\(path)")
     }
 
-    private func makeMultipartBody(imageData: Data, boundary: String) -> Data {
+    private func makeMultipartBody(imageData: Data, boundary: String, codingStack: String) -> Data {
         var body = Data()
+        appendTextField(name: "codingStack", value: codingStack, boundary: boundary, body: &body)
         body.append("--\(boundary)\r\n")
         body.append("Content-Disposition: form-data; name=\"screenshot\"; filename=\"screenshot.png\"\r\n")
         body.append("Content-Type: image/png\r\n\r\n")
         body.append(imageData)
         body.append("\r\n--\(boundary)--\r\n")
         return body
+    }
+
+    private func appendTextField(name: String, value: String, boundary: String, body: inout Data) {
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        body.append(value)
+        body.append("\r\n")
     }
 }
 

@@ -58,10 +58,12 @@ app.post("/api/captures", upload.single("screenshot"), async (req, res, next) =>
       return;
     }
 
+    const codingStack = sanitizePreference(req.body?.codingStack, "TypeScript");
     const session: SolverSession = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
       status: "processing",
+      codingStack,
       taskType: "UNKNOWN",
       confidence: "low",
       finalAnswer: "",
@@ -110,7 +112,7 @@ app.listen(port, () => {
 
 async function processSession(session: SolverSession, imagePath: string) {
   try {
-    const result = await solveScreenshot(imagePath);
+    const result = await solveScreenshot(imagePath, { codingStack: session.codingStack });
     await saveSession({
       ...session,
       status: "completed",
@@ -134,4 +136,17 @@ async function processSession(session: SolverSession, imagePath: string) {
       rawModelOutput: ""
     });
   }
+}
+
+function sanitizePreference(value: unknown, fallback: string) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  return trimmed.slice(0, 80);
 }

@@ -27,6 +27,36 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                Text("Coding Language / Stack")
+                    .font(.headline)
+                Picker("Coding Language / Stack", selection: $settings.codingStack) {
+                    ForEach(AppSettings.codingStackOptions, id: \.self) { option in
+                        Text(option).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text("Used when Athena detects a coding challenge.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Auto Capture", isOn: $settings.autoCaptureEnabled)
+                HStack {
+                    Text("Pause")
+                    Stepper(
+                        value: $settings.autoCaptureIntervalSeconds,
+                        in: 3...3600,
+                        step: 1
+                    ) {
+                        Text("\(Int(settings.autoCaptureIntervalSeconds.rounded())) seconds")
+                            .monospacedDigit()
+                    }
+                }
+                .disabled(!settings.autoCaptureEnabled)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Status")
                     .font(.headline)
                 Text(settings.statusMessage)
@@ -52,7 +82,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(22)
-        .frame(width: 460, height: 270)
+        .frame(width: 460, height: 410)
         .task {
             await checkPermission()
         }

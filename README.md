@@ -1,6 +1,6 @@
 # Athena
 
-Athena is a transparent personal macOS utility plus API and mobile-friendly web viewer. The macOS app captures the primary display with a menu-bar command or `Command + Shift + Y`, uploads the screenshot to the API, and the web app displays the AI-generated result.
+Athena is a transparent personal macOS utility plus API and mobile-friendly web viewer. The macOS app captures the primary display with a menu-bar command, global `Command + Shift + Y` hotkey, or optional timer, uploads the screenshot to the API, and the web app displays the AI-generated result.
 
 It does not bypass permissions or run stealthily. The macOS app uses normal Screen Recording permission and always has menu-bar presence.
 
@@ -86,6 +86,8 @@ The first capture/check may fail until permission is granted:
 ## macOS Usage
 
 Start the API first, then run the macOS app.
+
+For no-focus capture, use the global `Command + Shift + Y` hotkey or Auto Capture. These paths use ScreenCaptureKit directly and do not open Athena's window or result page. Avoid using the menu-bar **Capture Now**, **Settings**, or **Open Latest Result** actions while another app is monitoring foreground-app changes, because clicking the menu bar or opening a window/browser is normal foreground interaction.
 
 Menu-bar commands:
 

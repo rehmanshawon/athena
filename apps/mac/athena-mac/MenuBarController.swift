@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var hotKeyManager: HotKeyManager?
     private var autoCaptureTask: Task<Void, Never>?
+    private var activeAutoCaptureSessionId: String?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,10 +26,6 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
         observeAutoCaptureSettings()
         updateAutoCaptureTask()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.openSettings()
-        }
     }
 
     private func configureStatusItem() {
@@ -58,11 +55,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureMenuItem() {
+        activeAutoCaptureSessionId = nil
         captureNow()
     }
 
     private func captureNow() {
-        Task { await performCapture() }
+        Task { await performCapture(mode: .single) }
     }
 
     private func observeAutoCaptureSettings() {
@@ -85,7 +83,10 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         autoCaptureTask?.cancel()
         autoCaptureTask = nil
 
-        guard settings.autoCaptureEnabled else { return }
+        guard settings.autoCaptureEnabled else {
+            activeAutoCaptureSessionId = nil
+            return
+        }
 
         autoCaptureTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -94,13 +95,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
 
                 if Task.isCancelled { return }
-                await self.performCapture()
+                await self.performCapture(mode: .auto)
             }
         }
     }
 
-    private func performCapture() async {
-        guard !settings.isProcessing else { return }
+    private func performCapture(mode: CaptureMode) async {
+        guard mode == .auto || !settings.isProcessing else { return }
         settings.isProcessing = true
         settings.statusMessage = "Checking Screen Recording permission..."
 
@@ -124,16 +125,32 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             let response = try await apiClient.uploadScreenshot(
                 screenshot,
                 apiURL: settings.apiURL,
-                codingStack: settings.codingStack
+                codingStack: settings.codingStack,
+                sessionId: mode == .auto ? activeAutoCaptureSessionId : nil,
+                analysisDelayMs: mode == .auto ? autoCaptureAnalysisDelayMs() : 0
             )
+            if mode == .auto {
+                activeAutoCaptureSessionId = response.sessionId
+            }
             settings.latestResultURL = response.webUrl
-            settings.statusMessage = "Processing session \(response.sessionId)..."
+            let captureCount = response.captureCount ?? 1
+            settings.statusMessage = mode == .auto
+                ? "Captured page \(captureCount). Analyzing after scrolling pauses..."
+                : "Processing session \(response.sessionId)..."
 
-            try await pollSessionUntilFinished(sessionId: response.sessionId)
+            if mode == .auto {
+                settings.isProcessing = false
+            } else {
+                try await pollSessionUntilFinished(sessionId: response.sessionId)
+            }
         } catch {
             settings.statusMessage = "Failed: \(error.localizedDescription)"
             settings.isProcessing = false
         }
+    }
+
+    private func autoCaptureAnalysisDelayMs() -> Int {
+        Int((settings.safeAutoCaptureIntervalSeconds + 2) * 1_000)
     }
 
     private func pollSessionUntilFinished(sessionId: String) async throws {
@@ -202,6 +219,11 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+}
+
+private enum CaptureMode {
+    case single
+    case auto
 }
 
 private final class HotKeyManager {

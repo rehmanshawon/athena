@@ -1,13 +1,20 @@
+import CoreGraphics
 import Foundation
-import ScreenCaptureKit
+
+enum ScreenRecordingPermissionError: LocalizedError {
+    case missing
+
+    var errorDescription: String? {
+        "Screen Recording permission is not granted."
+    }
+}
 
 enum PermissionService {
     static func checkScreenRecordingPermission() async -> Result<Void, Error> {
-        do {
-            _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        if CGPreflightScreenCaptureAccess() {
             return .success(())
-        } catch {
-            return .failure(error)
         }
+
+        return .failure(ScreenRecordingPermissionError.missing)
     }
 }

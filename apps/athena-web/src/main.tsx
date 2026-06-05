@@ -8,8 +8,10 @@ type SessionStatus = "processing" | "completed" | "failed";
 interface SolverSession {
   id: string;
   createdAt: string;
+  updatedAt?: string;
   status: SessionStatus;
   codingStack: string;
+  captures?: CaptureImage[];
   taskType: string;
   confidence: string;
   finalAnswer: string;
@@ -17,6 +19,11 @@ interface SolverSession {
   copyReadyOutput: string;
   rawModelOutput: string;
   error: string | null;
+}
+
+interface CaptureImage {
+  id: string;
+  createdAt: string;
 }
 
 const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
@@ -55,13 +62,13 @@ function App() {
   }, [load]);
 
   React.useEffect(() => {
-    if (session?.status !== "processing") {
+    if (!session) {
       return;
     }
 
     const id = window.setInterval(() => void load(), 2000);
     return () => window.clearInterval(id);
-  }, [load, session?.status]);
+  }, [load, session?.id]);
 
   async function copyOutput() {
     const text = session?.copyReadyOutput || session?.finalAnswer || "";
@@ -89,6 +96,7 @@ function App() {
           <article className="space-y-4">
             <div className="flex flex-wrap gap-2">
               <Badge label={session.status} status={session.status} />
+              <Badge label={`${session.captures?.length || 1} capture${(session.captures?.length || 1) === 1 ? "" : "s"}`} />
               <Badge label={session.taskType} />
               <Badge label={`${session.confidence} confidence`} />
               {session.taskType === "CODING" ? <Badge label={session.codingStack} /> : null}

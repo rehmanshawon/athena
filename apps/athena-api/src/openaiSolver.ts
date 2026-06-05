@@ -6,7 +6,7 @@ interface SolverOptions {
   codingStack: string;
 }
 
-const SYSTEM_PROMPT = `You are Athena, a high-accuracy visual task-solving assistant. Analyze the screenshot carefully. Identify what kind of task is visible. Extract all important instructions, constraints, visible text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
+const SYSTEM_PROMPT = `You are Athena, a high-accuracy visual task-solving assistant. Analyze the screenshots carefully. They may be consecutive captures of one scrollable problem, shown in chronological order from top to bottom. Merge repeated/overlapping content, reconstruct the full task, and use all visible instructions, constraints, text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
 
 Handle these task types:
 
@@ -55,15 +55,33 @@ export async function solveScreenshot(
   imagePath: string,
   options: SolverOptions
 ): Promise<SolverResult & { rawModelOutput: string }> {
+  return solveScreenshots([imagePath], options);
+}
+
+export async function solveScreenshots(
+  imagePaths: string[],
+  options: SolverOptions
+): Promise<SolverResult & { rawModelOutput: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
+  if (imagePaths.length === 0) {
+    throw new Error("No screenshots were provided for analysis");
+  }
+
   const model = process.env.OPENAI_MODEL || "gpt-4o";
   const client = new OpenAI({ apiKey });
-  const image = await fs.readFile(imagePath);
-  const imageUrl = `data:image/png;base64,${image.toString("base64")}`;
+  const images = await Promise.all(
+    imagePaths.map(async (imagePath, index) => {
+      const image = await fs.readFile(imagePath);
+      return {
+        index,
+        imageUrl: `data:image/png;base64,${image.toString("base64")}`
+      };
+    })
+  );
 
   const response = await client.responses.create({
     model,
@@ -78,12 +96,18 @@ export async function solveScreenshot(
           {
             type: "input_text",
             text: [
-              "Solve the task visible in this screenshot. Return valid JSON only.",
+              `Solve the task visible across these ${images.length} screenshot(s). They are ordered by capture time while the user may be scrolling through the same problem.`,
+              "Treat overlapping text as duplicate context, not separate questions.",
+              "If later screenshots contain answer choices, combine them with the earlier problem statement before choosing an answer.",
+              "Return valid JSON only.",
               `If the visible task is a coding challenge, use this requested language or stack for the solution: ${options.codingStack}.`,
               "If the screenshot explicitly requires a different language, follow the screenshot and mention the conflict briefly in the explanation."
             ].join("\n")
           },
-          { type: "input_image", image_url: imageUrl, detail: "auto" }
+          ...images.flatMap((image) => [
+            { type: "input_text" as const, text: `Screenshot ${image.index + 1} of ${images.length}` },
+            { type: "input_image" as const, image_url: image.imageUrl, detail: "auto" as const }
+          ])
         ]
       }
     ],

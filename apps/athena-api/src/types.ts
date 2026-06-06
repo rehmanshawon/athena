@@ -21,6 +21,8 @@ export interface CaptureRequest {
   sessionId: string;
   createdAt: string;
   claimedAt: string | null;
+  failedAt?: string | null;
+  error?: string | null;
 }
 
 export interface SolverSession {

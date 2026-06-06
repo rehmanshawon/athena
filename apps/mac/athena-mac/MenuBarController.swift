@@ -199,8 +199,18 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             }
         } catch {
             settings.statusMessage = "Failed: \(error.localizedDescription)"
-            if webRequest != nil {
-                settings.webCaptureStatusMessage = "Web request failed: \(error.localizedDescription)"
+            if let webRequest {
+                let message = error.localizedDescription
+                settings.webCaptureStatusMessage = "Web request failed: \(message)"
+                do {
+                    try await apiClient.reportCaptureRequestFailure(
+                        requestId: webRequest.id,
+                        apiURL: settings.apiURL,
+                        error: message
+                    )
+                } catch {
+                    settings.webCaptureStatusMessage = "Web request failed, and reporting failed: \(error.localizedDescription)"
+                }
             }
             settings.isProcessing = false
         }

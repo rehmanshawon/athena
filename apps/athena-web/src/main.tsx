@@ -33,6 +33,8 @@ interface CaptureRequest {
   sessionId: string;
   createdAt: string;
   claimedAt: string | null;
+  failedAt?: string | null;
+  error?: string | null;
 }
 
 const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
@@ -51,8 +53,10 @@ function App() {
   const [isSolving, setIsSolving] = React.useState(false);
   const [isResetting, setIsResetting] = React.useState(false);
   const captureCount = session?.captures?.length || 0;
-  const waitingRequestCount = session?.captureRequests?.filter((request) => !request.claimedAt).length || 0;
-  const claimedRequestCount = session?.captureRequests?.filter((request) => request.claimedAt).length || 0;
+  const failedRequests = session?.captureRequests?.filter((request) => request.failedAt) || [];
+  const waitingRequestCount = session?.captureRequests?.filter((request) => !request.claimedAt && !request.failedAt).length || 0;
+  const claimedRequestCount = session?.captureRequests?.filter((request) => request.claimedAt && !request.failedAt).length || 0;
+  const requestCount = waitingRequestCount + claimedRequestCount + failedRequests.length;
 
   const load = React.useCallback(async () => {
     try {
@@ -211,7 +215,7 @@ function App() {
             <button
               className="iconButton danger"
               onClick={() => void resetSession()}
-              disabled={!session?.captures?.length || session.status === "processing" || isResetting}
+              disabled={(!captureCount && !requestCount) || session?.status === "processing" || isResetting}
               aria-label="Reset screenshots"
               title="Reset screenshots"
             >
@@ -232,12 +236,16 @@ function App() {
               <Badge label={`${captureCount} capture${captureCount === 1 ? "" : "s"}`} />
               {waitingRequestCount ? <Badge label={`${waitingRequestCount} waiting for Mac`} /> : null}
               {claimedRequestCount ? <Badge label={`${claimedRequestCount} claimed by Mac`} /> : null}
+              {failedRequests.length ? <Badge label={`${failedRequests.length} Mac failed`} status="failed" /> : null}
               <Badge label={session.taskType} />
               <Badge label={`${session.confidence} confidence`} />
               {session.taskType === "CODING" ? <Badge label={session.codingStack} /> : null}
             </div>
 
             <ThumbnailGrid session={session} />
+            {failedRequests.length ? (
+              <Notice tone="error" text={failedRequests[failedRequests.length - 1]?.error || "Mac capture failed"} />
+            ) : null}
 
             <Panel title="Final Answer" body={session.error || session.finalAnswer || "Waiting for the result..."} prominent />
             <Panel title="Explanation" body={session.explanation || "No explanation yet."} />

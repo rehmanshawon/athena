@@ -110,6 +110,28 @@ final class AthenaAPIClient {
         return try JSONDecoder().decode(CaptureRequest.self, from: data)
     }
 
+    func reportCaptureRequestFailure(requestId: String, apiURL: String, error: String) async throws {
+        guard let url = endpointURL(apiURL: apiURL, path: "api/capture-requests/\(requestId)/fail") else {
+            throw AthenaAPIClientError.invalidAPIURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["error": error])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AthenaAPIClientError.invalidResponse
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "Failure report failed with status \(http.statusCode)."
+            throw AthenaAPIClientError.serverError(message)
+        }
+    }
+
+
     func fetchSession(sessionId: String, apiURL: String) async throws -> SolverSession {
         guard let url = endpointURL(apiURL: apiURL, path: "api/sessions/\(sessionId)") else {
             throw AthenaAPIClientError.invalidAPIURL

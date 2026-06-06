@@ -102,6 +102,10 @@ app.get("/api/capture-requests/next", async (_req, res, next) => {
     const nowMs = Date.now();
     for (const { session } of sessions) {
       const request = (session.captureRequests || []).find((candidate) => {
+        if (candidate.failedAt) {
+          return false;
+        }
+
         if (!candidate.claimedAt) {
           return true;
         }
@@ -127,6 +131,44 @@ app.get("/api/capture-requests/next", async (_req, res, next) => {
     }
 
     res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/capture-requests/:requestId/fail", async (req, res, next) => {
+  try {
+    const requestId = sanitizeOptionalId(req.params.requestId);
+    if (!requestId) {
+      res.status(400).json({ error: "Invalid capture request id" });
+      return;
+    }
+
+    const sessions = await getAllSessions();
+    const found = sessions.find(({ session }) => (session.captureRequests || []).some((request) => request.id === requestId));
+    if (!found) {
+      res.status(404).json({ error: "Capture request not found" });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const message = sanitizePrompt(req.body?.error) || "Mac capture failed";
+    const updated: SolverSession = {
+      ...found.session,
+      updatedAt: now,
+      captureRequests: (found.session.captureRequests || []).map((request) =>
+        request.id === requestId
+          ? {
+              ...request,
+              failedAt: now,
+              error: message
+            }
+          : request
+      )
+    };
+
+    await saveSession(updated);
+    res.json(publicSession(updated));
   } catch (error) {
     next(error);
   }
@@ -468,7 +510,9 @@ function publicSession(session: SolverSession) {
       id: request.id,
       sessionId: request.sessionId,
       createdAt: request.createdAt,
-      claimedAt: request.claimedAt
+      claimedAt: request.claimedAt,
+      failedAt: request.failedAt || null,
+      error: request.error || null
     }))
   };
 }

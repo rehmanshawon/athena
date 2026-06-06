@@ -8,7 +8,7 @@ export type TaskType =
   | "UNKNOWN";
 
 export type Confidence = "low" | "medium" | "high";
-export type SessionStatus = "processing" | "completed" | "failed";
+export type SessionStatus = "collecting" | "processing" | "completed" | "failed";
 
 export interface CaptureImage {
   id: string;
@@ -22,6 +22,7 @@ export interface SolverSession {
   updatedAt: string;
   status: SessionStatus;
   codingStack: string;
+  prompt?: string;
   captures: CaptureImage[];
   taskType: TaskType;
   confidence: Confidence;

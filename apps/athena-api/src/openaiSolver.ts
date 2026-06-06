@@ -4,6 +4,7 @@ import type { SolverResult, TaskType, Confidence } from "./types.js";
 
 interface SolverOptions {
   codingStack: string;
+  prompt?: string;
 }
 
 const SYSTEM_PROMPT = `You are Athena, a high-accuracy visual task-solving assistant. Analyze the screenshots carefully. They may be consecutive captures of one scrollable problem, shown in chronological order from top to bottom. Merge repeated/overlapping content, reconstruct the full task, and use all visible instructions, constraints, text, answer options, code, formulas, images, UI labels, and required output format. Then solve the task in the most useful way.
@@ -99,10 +100,11 @@ export async function solveScreenshots(
               `Solve the task visible across these ${images.length} screenshot(s). They are ordered by capture time while the user may be scrolling through the same problem.`,
               "Treat overlapping text as duplicate context, not separate questions.",
               "If later screenshots contain answer choices, combine them with the earlier problem statement before choosing an answer.",
+              options.prompt ? `User prompt: ${options.prompt}` : "",
               "Return valid JSON only.",
               `If the visible task is a coding challenge, use this requested language or stack for the solution: ${options.codingStack}.`,
               "If the screenshot explicitly requires a different language, follow the screenshot and mention the conflict briefly in the explanation."
-            ].join("\n")
+            ].filter(Boolean).join("\n")
           },
           ...images.flatMap((image) => [
             { type: "input_text" as const, text: `Screenshot ${image.index + 1} of ${images.length}` },

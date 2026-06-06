@@ -22,6 +22,14 @@ const webBaseUrl = process.env.WEB_BASE_URL || "http://localhost:5173";
 const uploadsDir = path.resolve(apiRoot, "uploads");
 const defaultAnalysisDelayMs = Number(process.env.ANALYSIS_DELAY_MS || 2500);
 const analysisTimers = new Map<string, NodeJS.Timeout>();
+const captureRequests: CaptureRequest[] = [];
+
+interface CaptureRequest {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  claimedAt: string | null;
+}
 
 await fs.mkdir(uploadsDir, { recursive: true });
 
@@ -53,6 +61,61 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "athena-api" });
 });
 
+app.post("/api/take-screenshot", async (req, res, next) => {
+  try {
+    const now = new Date().toISOString();
+    const codingStack = sanitizePreference(req.body?.codingStack, "TypeScript");
+    const existingSessionId = sanitizeOptionalId(req.body?.sessionId);
+    const existingSession = existingSessionId ? await getSession(existingSessionId) : null;
+    const session =
+      existingSession ||
+      createSession({
+        now,
+        codingStack,
+        status: "collecting",
+        finalAnswer: "Waiting for screenshots..."
+      });
+
+    const request: CaptureRequest = {
+      id: randomUUID(),
+      sessionId: session.id,
+      createdAt: now,
+      claimedAt: null
+    };
+    captureRequests.push(request);
+
+    if (!existingSession) {
+      await saveSession(session);
+    }
+
+    res.status(202).json({
+      requestId: request.id,
+      session: publicSession(session)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/capture-requests/next", (_req, res) => {
+  const nowMs = Date.now();
+  const request = captureRequests.find((candidate) => {
+    if (!candidate.claimedAt) {
+      return true;
+    }
+
+    return nowMs - new Date(candidate.claimedAt).getTime() > 60_000;
+  });
+
+  if (!request) {
+    res.status(204).end();
+    return;
+  }
+
+  request.claimedAt = new Date().toISOString();
+  res.json(request);
+});
+
 app.post("/api/captures", upload.single("screenshot"), async (req, res, next) => {
   try {
     if (!req.file) {
@@ -65,34 +128,33 @@ app.post("/api/captures", upload.single("screenshot"), async (req, res, next) =>
     const existingSessionId = sanitizeOptionalId(req.body?.sessionId);
     const existingSession = existingSessionId ? await getSession(existingSessionId) : null;
     const analysisDelayMs = sanitizeDelayMs(req.body?.analysisDelayMs, defaultAnalysisDelayMs);
+    const deferAnalysis = sanitizeBoolean(req.body?.deferAnalysis);
+    const requestId = sanitizeOptionalId(req.body?.requestId);
     const capture = { id: randomUUID(), createdAt: now, path: req.file.path };
     const session: SolverSession = existingSession
       ? {
           ...existingSession,
           updatedAt: now,
-          status: "processing",
+          status: deferAnalysis ? "collecting" : "processing",
           codingStack,
           captures: [...(existingSession.captures || []), capture],
-          finalAnswer: existingSession.finalAnswer || `Received ${(existingSession.captures || []).length + 1} screenshots. Waiting for more context...`,
+          finalAnswer: deferAnalysis
+            ? `Received ${(existingSession.captures || []).length + 1} screenshots. Add more or press Solve.`
+            : existingSession.finalAnswer || `Received ${(existingSession.captures || []).length + 1} screenshots. Waiting for more context...`,
           error: null
         }
-      : {
-          id: randomUUID(),
-          createdAt: now,
-          updatedAt: now,
-          status: "processing",
+      : createSession({
+          now,
           codingStack,
+          status: deferAnalysis ? "collecting" : "processing",
           captures: [capture],
-          taskType: "UNKNOWN",
-          confidence: "low",
-          finalAnswer: "Received 1 screenshot. Waiting briefly for more context...",
-          explanation: "",
-          copyReadyOutput: "",
-          rawModelOutput: "",
-          error: null
-        };
+          finalAnswer: deferAnalysis ? "Received 1 screenshot. Add more or press Solve." : "Received 1 screenshot. Waiting briefly for more context..."
+        });
 
     await saveSession(session);
+    if (requestId) {
+      removeCaptureRequest(requestId);
+    }
     const webUrl = `${webBaseUrl.replace(/\/$/, "")}/session/${session.id}`;
     res.status(existingSession ? 200 : 202).json({
       sessionId: session.id,
@@ -101,7 +163,9 @@ app.post("/api/captures", upload.single("screenshot"), async (req, res, next) =>
       captureCount: session.captures.length
     });
 
-    scheduleSessionProcessing(session.id, analysisDelayMs);
+    if (!deferAnalysis) {
+      scheduleSessionProcessing(session.id, analysisDelayMs);
+    }
   } catch (error) {
     next(error);
   }
@@ -123,6 +187,52 @@ app.get("/api/sessions/:sessionId", async (req, res) => {
     return;
   }
   res.json(publicSession(session));
+});
+
+app.get("/api/sessions/:sessionId/captures/:captureId/image", async (req, res) => {
+  const session = await getSession(req.params.sessionId);
+  const capture = session?.captures.find((candidate) => candidate.id === req.params.captureId);
+  if (!capture) {
+    res.status(404).json({ error: "Capture not found" });
+    return;
+  }
+
+  res.sendFile(capture.path);
+});
+
+app.post("/api/sessions/:sessionId/solve", async (req, res, next) => {
+  try {
+    const session = await getSession(req.params.sessionId);
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    if ((session.captures || []).length === 0) {
+      res.status(400).json({ error: "Take at least one screenshot before solving." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const updated: SolverSession = {
+      ...session,
+      updatedAt: now,
+      status: "processing",
+      codingStack: sanitizePreference(req.body?.codingStack, session.codingStack),
+      prompt: sanitizePrompt(req.body?.prompt),
+      finalAnswer: "Analyzing screenshots...",
+      explanation: "",
+      copyReadyOutput: "",
+      rawModelOutput: "",
+      error: null
+    };
+    await saveSession(updated);
+
+    res.status(202).json(publicSession(updated));
+    void processSession(updated.id);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -160,7 +270,7 @@ async function processSession(sessionId: string) {
   try {
     const result = await solveScreenshots(
       captures.map((capture) => capture.path),
-      { codingStack: session.codingStack }
+      { codingStack: session.codingStack, prompt: session.prompt }
     );
     const latest = await getSession(session.id);
     if (!latest || (latest.captures || []).length !== captureCount) {
@@ -199,6 +309,43 @@ async function processSession(sessionId: string) {
   }
 }
 
+function createSession({
+  now,
+  codingStack,
+  status,
+  captures = [],
+  finalAnswer
+}: {
+  now: string;
+  codingStack: string;
+  status: SolverSession["status"];
+  captures?: SolverSession["captures"];
+  finalAnswer: string;
+}): SolverSession {
+  return {
+    id: randomUUID(),
+    createdAt: now,
+    updatedAt: now,
+    status,
+    codingStack,
+    captures,
+    taskType: "UNKNOWN",
+    confidence: "low",
+    finalAnswer,
+    explanation: "",
+    copyReadyOutput: "",
+    rawModelOutput: "",
+    error: null
+  };
+}
+
+function removeCaptureRequest(requestId: string) {
+  const index = captureRequests.findIndex((request) => request.id === requestId);
+  if (index >= 0) {
+    captureRequests.splice(index, 1);
+  }
+}
+
 function sanitizePreference(value: unknown, fallback: string) {
   if (typeof value !== "string") {
     return fallback;
@@ -234,12 +381,25 @@ function sanitizeDelayMs(value: unknown, fallback: number) {
   return Math.max(0, Math.min(60_000, Math.round(numeric)));
 }
 
+function sanitizeBoolean(value: unknown) {
+  return value === true || value === "true" || value === "1";
+}
+
+function sanitizePrompt(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().slice(0, 4000);
+}
+
 function publicSession(session: SolverSession) {
   return {
     ...session,
     captures: (session.captures || []).map((capture) => ({
       id: capture.id,
-      createdAt: capture.createdAt
+      createdAt: capture.createdAt,
+      thumbnailUrl: `/api/sessions/${session.id}/captures/${capture.id}/image`
     }))
   };
 }

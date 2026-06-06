@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var hotKeyManager: HotKeyManager?
     private var autoCaptureTask: Task<Void, Never>?
+    private var webCaptureTask: Task<Void, Never>?
     private var activeAutoCaptureSessionId: String?
     private var cancellables = Set<AnyCancellable>()
 
@@ -26,6 +27,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
         observeAutoCaptureSettings()
         updateAutoCaptureTask()
+        startWebCapturePolling()
     }
 
     private func configureStatusItem() {
@@ -100,8 +102,43 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startWebCapturePolling() {
+        webCaptureTask?.cancel()
+        webCaptureTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                do {
+                    let apiURL = await MainActor.run { self.settings.apiURL }
+                    if let request = try await self.apiClient.fetchNextCaptureRequest(apiURL: apiURL) {
+                        await self.performCapture(mode: .webRequest(request))
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.settings.statusMessage = "Web capture polling failed: \(error.localizedDescription)"
+                    }
+                }
+
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
     private func performCapture(mode: CaptureMode) async {
-        guard mode == .auto || !settings.isProcessing else { return }
+        let isAutoCapture: Bool
+        let webRequest: CaptureRequest?
+        switch mode {
+        case .auto:
+            isAutoCapture = true
+            webRequest = nil
+        case .single:
+            isAutoCapture = false
+            webRequest = nil
+        case .webRequest(let request):
+            isAutoCapture = false
+            webRequest = request
+        }
+
+        guard isAutoCapture || !settings.isProcessing else { return }
         settings.isProcessing = true
         settings.statusMessage = "Checking Screen Recording permission..."
 
@@ -126,19 +163,25 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 screenshot,
                 apiURL: settings.apiURL,
                 codingStack: settings.codingStack,
-                sessionId: mode == .auto ? activeAutoCaptureSessionId : nil,
-                analysisDelayMs: mode == .auto ? autoCaptureAnalysisDelayMs() : 0
+                sessionId: webRequest?.sessionId ?? (isAutoCapture ? activeAutoCaptureSessionId : nil),
+                requestId: webRequest?.id,
+                deferAnalysis: webRequest != nil,
+                analysisDelayMs: isAutoCapture ? autoCaptureAnalysisDelayMs() : 0
             )
-            if mode == .auto {
+            if isAutoCapture {
                 activeAutoCaptureSessionId = response.sessionId
             }
             settings.latestResultURL = response.webUrl
             let captureCount = response.captureCount ?? 1
-            settings.statusMessage = mode == .auto
-                ? "Captured page \(captureCount). Analyzing after scrolling pauses..."
-                : "Processing session \(response.sessionId)..."
+            if isAutoCapture {
+                settings.statusMessage = "Captured page \(captureCount). Analyzing after scrolling pauses..."
+            } else if webRequest != nil {
+                settings.statusMessage = "Captured thumbnail \(captureCount). Waiting for web solve."
+            } else {
+                settings.statusMessage = "Processing session \(response.sessionId)..."
+            }
 
-            if mode == .auto {
+            if isAutoCapture || webRequest != nil {
                 settings.isProcessing = false
             } else {
                 try await pollSessionUntilFinished(sessionId: response.sessionId)
@@ -224,6 +267,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 private enum CaptureMode {
     case single
     case auto
+    case webRequest(CaptureRequest)
 }
 
 private final class HotKeyManager {

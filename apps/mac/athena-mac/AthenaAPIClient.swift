@@ -24,6 +24,12 @@ struct CaptureUploadResponse: Decodable {
     let captureCount: Int?
 }
 
+struct CaptureRequest: Decodable {
+    let id: String
+    let sessionId: String
+    let createdAt: String
+}
+
 struct SolverSession: Decodable {
     let id: String
     let status: String
@@ -47,6 +53,8 @@ final class AthenaAPIClient {
         apiURL: String,
         codingStack: String,
         sessionId: String? = nil,
+        requestId: String? = nil,
+        deferAnalysis: Bool = false,
         analysisDelayMs: Int = 0
     ) async throws -> CaptureUploadResponse {
         guard let url = endpointURL(apiURL: apiURL, path: "api/captures") else {
@@ -62,6 +70,8 @@ final class AthenaAPIClient {
             boundary: boundary,
             codingStack: codingStack,
             sessionId: sessionId,
+            requestId: requestId,
+            deferAnalysis: deferAnalysis,
             analysisDelayMs: analysisDelayMs
         )
 
@@ -76,6 +86,28 @@ final class AthenaAPIClient {
         }
 
         return try JSONDecoder().decode(CaptureUploadResponse.self, from: data)
+    }
+
+    func fetchNextCaptureRequest(apiURL: String) async throws -> CaptureRequest? {
+        guard let url = endpointURL(apiURL: apiURL, path: "api/capture-requests/next") else {
+            throw AthenaAPIClientError.invalidAPIURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw AthenaAPIClientError.invalidResponse
+        }
+
+        if http.statusCode == 204 {
+            return nil
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "Request polling failed with status \(http.statusCode)."
+            throw AthenaAPIClientError.serverError(message)
+        }
+
+        return try JSONDecoder().decode(CaptureRequest.self, from: data)
     }
 
     func fetchSession(sessionId: String, apiURL: String) async throws -> SolverSession {
@@ -96,12 +128,24 @@ final class AthenaAPIClient {
         return URL(string: "\(base)/\(path)")
     }
 
-    private func makeMultipartBody(imageData: Data, boundary: String, codingStack: String, sessionId: String?, analysisDelayMs: Int) -> Data {
+    private func makeMultipartBody(
+        imageData: Data,
+        boundary: String,
+        codingStack: String,
+        sessionId: String?,
+        requestId: String?,
+        deferAnalysis: Bool,
+        analysisDelayMs: Int
+    ) -> Data {
         var body = Data()
         appendTextField(name: "codingStack", value: codingStack, boundary: boundary, body: &body)
         appendTextField(name: "analysisDelayMs", value: String(max(0, analysisDelayMs)), boundary: boundary, body: &body)
+        appendTextField(name: "deferAnalysis", value: deferAnalysis ? "true" : "false", boundary: boundary, body: &body)
         if let sessionId, !sessionId.isEmpty {
             appendTextField(name: "sessionId", value: sessionId, boundary: boundary, body: &body)
+        }
+        if let requestId, !requestId.isEmpty {
+            appendTextField(name: "requestId", value: requestId, boundary: boundary, body: &body)
         }
         body.append("--\(boundary)\r\n")
         body.append("Content-Disposition: form-data; name=\"screenshot\"; filename=\"screenshot.png\"\r\n")

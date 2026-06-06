@@ -41,9 +41,16 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Toggle("Auto Capture", isOn: $settings.autoCaptureEnabled)
                 HStack {
-                    Text("Pause")
+                    Toggle("Allow Timed Auto Capture", isOn: $settings.autoCaptureEnabled)
+                    Spacer()
+                    Button("Stop Auto Capture") {
+                        settings.autoCaptureEnabled = false
+                    }
+                    .disabled(!settings.autoCaptureEnabled)
+                }
+                HStack {
+                    Text("Interval")
                     Stepper(
                         value: $settings.autoCaptureIntervalSeconds,
                         in: 3...3600,
@@ -54,6 +61,9 @@ struct ContentView: View {
                     }
                 }
                 .disabled(!settings.autoCaptureEnabled)
+                Text(settings.autoCaptureEnabled ? "Timed capture is running in the background." : "Timed capture is stopped. Web and hotkey captures still work.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -82,7 +92,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(22)
-        .frame(width: 460, height: 410)
+        .frame(width: 500, height: 430)
         .task {
             await checkPermission()
         }

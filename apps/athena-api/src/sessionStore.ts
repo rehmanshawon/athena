@@ -27,22 +27,27 @@ export async function getSession(sessionId: string): Promise<SolverSession | nul
 }
 
 export async function getLatestSession(): Promise<SolverSession | null> {
+  const sessions = await getAllSessions();
+  return sessions[0]?.session || null;
+}
+
+export async function getAllSessions(): Promise<Array<{ session: SolverSession; filePath: string; mtimeMs: number }>> {
   await ensureSessionStorage();
   const files = await fs.readdir(sessionsDir);
   const jsonFiles = files.filter((file) => file.endsWith(".json"));
   if (jsonFiles.length === 0) {
-    return null;
+    return [];
   }
 
   const sessions = await Promise.all(
     jsonFiles.map(async (file) => {
       const filePath = path.join(sessionsDir, file);
       const stat = await fs.stat(filePath);
-      return { filePath, mtimeMs: stat.mtimeMs };
+      const data = await fs.readFile(filePath, "utf8");
+      return { session: JSON.parse(data) as SolverSession, filePath, mtimeMs: stat.mtimeMs };
     })
   );
 
   sessions.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const data = await fs.readFile(sessions[0].filePath, "utf8");
-  return JSON.parse(data) as SolverSession;
+  return sessions;
 }

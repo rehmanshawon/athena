@@ -12,6 +12,7 @@ interface SolverSession {
   status: SessionStatus;
   codingStack: string;
   captures?: CaptureImage[];
+  captureRequests?: CaptureRequest[];
   taskType: string;
   confidence: string;
   finalAnswer: string;
@@ -25,6 +26,13 @@ interface CaptureImage {
   id: string;
   createdAt: string;
   thumbnailUrl?: string;
+}
+
+interface CaptureRequest {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  claimedAt: string | null;
 }
 
 const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
@@ -42,6 +50,7 @@ function App() {
   const [isTakingScreenshot, setIsTakingScreenshot] = React.useState(false);
   const [isSolving, setIsSolving] = React.useState(false);
   const [isResetting, setIsResetting] = React.useState(false);
+  const captureCount = session?.captures?.length || 0;
 
   const load = React.useCallback(async () => {
     try {
@@ -218,7 +227,12 @@ function App() {
           <article className="space-y-4">
             <div className="flex flex-wrap gap-2">
               <Badge label={session.status} status={session.status} />
-              <Badge label={`${session.captures?.length || 1} capture${(session.captures?.length || 1) === 1 ? "" : "s"}`} />
+              <Badge label={`${captureCount} capture${captureCount === 1 ? "" : "s"}`} />
+              {session.captureRequests?.length ? (
+                <Badge
+                  label={`${session.captureRequests.length} pending Mac request${session.captureRequests.length === 1 ? "" : "s"}`}
+                />
+              ) : null}
               <Badge label={session.taskType} />
               <Badge label={`${session.confidence} confidence`} />
               {session.taskType === "CODING" ? <Badge label={session.codingStack} /> : null}

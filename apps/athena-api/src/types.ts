@@ -16,6 +16,13 @@ export interface CaptureImage {
   path: string;
 }
 
+export interface CaptureRequest {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  claimedAt: string | null;
+}
+
 export interface SolverSession {
   id: string;
   createdAt: string;
@@ -24,6 +31,7 @@ export interface SolverSession {
   codingStack: string;
   prompt?: string;
   captures: CaptureImage[];
+  captureRequests?: CaptureRequest[];
   taskType: TaskType;
   confidence: Confidence;
   finalAnswer: string;

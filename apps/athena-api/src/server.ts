@@ -7,9 +7,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { getLatestSession, getSession, saveSession } from "./sessionStore.js";
+import { getAllSessions, getLatestSession, getSession, saveSession } from "./sessionStore.js";
 import { solveScreenshots } from "./openaiSolver.js";
-import type { SolverSession } from "./types.js";
+import type { CaptureRequest, SolverSession } from "./types.js";
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -22,14 +22,7 @@ const webBaseUrl = process.env.WEB_BASE_URL || "http://localhost:5173";
 const uploadsDir = path.resolve(apiRoot, "uploads");
 const defaultAnalysisDelayMs = Number(process.env.ANALYSIS_DELAY_MS || 2500);
 const analysisTimers = new Map<string, NodeJS.Timeout>();
-const captureRequests: CaptureRequest[] = [];
-
-interface CaptureRequest {
-  id: string;
-  sessionId: string;
-  createdAt: string;
-  claimedAt: string | null;
-}
+const captureRequestClaimTimeoutMs = Number(process.env.CAPTURE_REQUEST_CLAIM_TIMEOUT_MS || 15_000);
 
 await fs.mkdir(uploadsDir, { recursive: true });
 
@@ -82,38 +75,61 @@ app.post("/api/take-screenshot", async (req, res, next) => {
       createdAt: now,
       claimedAt: null
     };
-    captureRequests.push(request);
-
-    if (!existingSession) {
-      await saveSession(session);
-    }
+    await saveSession({
+      ...session,
+      updatedAt: now,
+      status: "collecting",
+      captureRequests: [...(session.captureRequests || []), request]
+    });
 
     res.status(202).json({
       requestId: request.id,
-      session: publicSession(session)
+      session: publicSession({
+        ...session,
+        updatedAt: now,
+        status: "collecting",
+        captureRequests: [...(session.captureRequests || []), request]
+      })
     });
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/capture-requests/next", (_req, res) => {
-  const nowMs = Date.now();
-  const request = captureRequests.find((candidate) => {
-    if (!candidate.claimedAt) {
-      return true;
+app.get("/api/capture-requests/next", async (_req, res, next) => {
+  try {
+    const sessions = await getAllSessions();
+    const nowMs = Date.now();
+    for (const { session } of sessions) {
+      const request = (session.captureRequests || []).find((candidate) => {
+        if (!candidate.claimedAt) {
+          return true;
+        }
+
+        return nowMs - new Date(candidate.claimedAt).getTime() > captureRequestClaimTimeoutMs;
+      });
+
+      if (!request) {
+        continue;
+      }
+
+      const claimedRequest = { ...request, claimedAt: new Date().toISOString() };
+      await saveSession({
+        ...session,
+        updatedAt: claimedRequest.claimedAt,
+        captureRequests: (session.captureRequests || []).map((candidate) =>
+          candidate.id === request.id ? claimedRequest : candidate
+        )
+      });
+
+      res.json(claimedRequest);
+      return;
     }
 
-    return nowMs - new Date(candidate.claimedAt).getTime() > 60_000;
-  });
-
-  if (!request) {
     res.status(204).end();
-    return;
+  } catch (error) {
+    next(error);
   }
-
-  request.claimedAt = new Date().toISOString();
-  res.json(request);
 });
 
 app.post("/api/captures", upload.single("screenshot"), async (req, res, next) => {
@@ -131,7 +147,7 @@ app.post("/api/captures", upload.single("screenshot"), async (req, res, next) =>
     const deferAnalysis = sanitizeBoolean(req.body?.deferAnalysis);
     const requestId = sanitizeOptionalId(req.body?.requestId);
     const capture = { id: randomUUID(), createdAt: now, path: req.file.path };
-    const session: SolverSession = existingSession
+    let session: SolverSession = existingSession
       ? {
           ...existingSession,
           updatedAt: now,
@@ -150,11 +166,14 @@ app.post("/api/captures", upload.single("screenshot"), async (req, res, next) =>
           captures: [capture],
           finalAnswer: deferAnalysis ? "Received 1 screenshot. Add more or press Solve." : "Received 1 screenshot. Waiting briefly for more context..."
         });
+    if (requestId) {
+      session = {
+        ...session,
+        captureRequests: (session.captureRequests || []).filter((request) => request.id !== requestId)
+      };
+    }
 
     await saveSession(session);
-    if (requestId) {
-      removeCaptureRequest(requestId);
-    }
     const webUrl = `${webBaseUrl.replace(/\/$/, "")}/session/${session.id}`;
     res.status(existingSession ? 200 : 202).json({
       sessionId: session.id,
@@ -249,7 +268,6 @@ app.post("/api/sessions/:sessionId/reset", async (req, res, next) => {
       analysisTimers.delete(session.id);
     }
 
-    removeCaptureRequestsForSession(session.id);
     await Promise.all(
       (session.captures || []).map(async (capture) => {
         try {
@@ -268,6 +286,7 @@ app.post("/api/sessions/:sessionId/reset", async (req, res, next) => {
       updatedAt: new Date().toISOString(),
       status: "collecting",
       captures: [],
+      captureRequests: [],
       taskType: "UNKNOWN",
       confidence: "low",
       finalAnswer: "Screenshots cleared. Take a screenshot to start again.",
@@ -379,6 +398,7 @@ function createSession({
     status,
     codingStack,
     captures,
+    captureRequests: [],
     taskType: "UNKNOWN",
     confidence: "low",
     finalAnswer,
@@ -387,21 +407,6 @@ function createSession({
     rawModelOutput: "",
     error: null
   };
-}
-
-function removeCaptureRequest(requestId: string) {
-  const index = captureRequests.findIndex((request) => request.id === requestId);
-  if (index >= 0) {
-    captureRequests.splice(index, 1);
-  }
-}
-
-function removeCaptureRequestsForSession(sessionId: string) {
-  for (let index = captureRequests.length - 1; index >= 0; index -= 1) {
-    if (captureRequests[index]?.sessionId === sessionId) {
-      captureRequests.splice(index, 1);
-    }
-  }
 }
 
 function sanitizePreference(value: unknown, fallback: string) {
@@ -458,6 +463,12 @@ function publicSession(session: SolverSession) {
       id: capture.id,
       createdAt: capture.createdAt,
       thumbnailUrl: `/api/sessions/${session.id}/captures/${capture.id}/image`
+    })),
+    captureRequests: (session.captureRequests || []).map((request) => ({
+      id: request.id,
+      sessionId: request.sessionId,
+      createdAt: request.createdAt,
+      claimedAt: request.claimedAt
     }))
   };
 }

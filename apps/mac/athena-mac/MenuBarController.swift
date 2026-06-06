@@ -87,6 +87,8 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
         guard settings.autoCaptureEnabled else {
             activeAutoCaptureSessionId = nil
+            settings.isProcessing = false
+            settings.statusMessage = "Timed capture stopped. Web and hotkey captures are ready."
             return
         }
 
@@ -138,7 +140,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             webRequest = request
         }
 
-        guard isAutoCapture || !settings.isProcessing else { return }
+        guard isAutoCapture || webRequest != nil || !settings.isProcessing else { return }
         settings.isProcessing = true
         settings.statusMessage = "Checking Screen Recording permission..."
 

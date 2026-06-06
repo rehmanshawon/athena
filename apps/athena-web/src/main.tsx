@@ -51,6 +51,8 @@ function App() {
   const [isSolving, setIsSolving] = React.useState(false);
   const [isResetting, setIsResetting] = React.useState(false);
   const captureCount = session?.captures?.length || 0;
+  const waitingRequestCount = session?.captureRequests?.filter((request) => !request.claimedAt).length || 0;
+  const claimedRequestCount = session?.captureRequests?.filter((request) => request.claimedAt).length || 0;
 
   const load = React.useCallback(async () => {
     try {
@@ -228,11 +230,8 @@ function App() {
             <div className="flex flex-wrap gap-2">
               <Badge label={session.status} status={session.status} />
               <Badge label={`${captureCount} capture${captureCount === 1 ? "" : "s"}`} />
-              {session.captureRequests?.length ? (
-                <Badge
-                  label={`${session.captureRequests.length} pending Mac request${session.captureRequests.length === 1 ? "" : "s"}`}
-                />
-              ) : null}
+              {waitingRequestCount ? <Badge label={`${waitingRequestCount} waiting for Mac`} /> : null}
+              {claimedRequestCount ? <Badge label={`${claimedRequestCount} claimed by Mac`} /> : null}
               <Badge label={session.taskType} />
               <Badge label={`${session.confidence} confidence`} />
               {session.taskType === "CODING" ? <Badge label={session.codingStack} /> : null}

@@ -75,6 +75,16 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Web Requests")
+                    .font(.headline)
+                Text(settings.webCaptureStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             HStack {
                 Button("Check Permission") {
                     Task { await checkPermission() }
@@ -92,7 +102,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(22)
-        .frame(width: 500, height: 430)
+        .frame(width: 500, height: 470)
         .task {
             await checkPermission()
         }

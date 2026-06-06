@@ -106,17 +106,25 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     private func startWebCapturePolling() {
         webCaptureTask?.cancel()
+        settings.webCaptureStatusMessage = "Polling \(settings.apiURL) for web requests..."
         webCaptureTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
                     let apiURL = await MainActor.run { self.settings.apiURL }
                     if let request = try await self.apiClient.fetchNextCaptureRequest(apiURL: apiURL) {
+                        await MainActor.run {
+                            self.settings.webCaptureStatusMessage = "Claimed web request \(request.id). Capturing..."
+                        }
                         await self.performCapture(mode: .webRequest(request))
+                    } else {
+                        await MainActor.run {
+                            self.settings.webCaptureStatusMessage = "Polling \(apiURL). No pending web requests."
+                        }
                     }
                 } catch {
                     await MainActor.run {
-                        self.settings.statusMessage = "Web capture polling failed: \(error.localizedDescription)"
+                        self.settings.webCaptureStatusMessage = "Web polling failed: \(error.localizedDescription)"
                     }
                 }
 
@@ -179,6 +187,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 settings.statusMessage = "Captured page \(captureCount). Analyzing after scrolling pauses..."
             } else if webRequest != nil {
                 settings.statusMessage = "Captured thumbnail \(captureCount). Waiting for web solve."
+                settings.webCaptureStatusMessage = "Uploaded web screenshot. Waiting for the next request."
             } else {
                 settings.statusMessage = "Processing session \(response.sessionId)..."
             }
@@ -190,6 +199,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             }
         } catch {
             settings.statusMessage = "Failed: \(error.localizedDescription)"
+            if webRequest != nil {
+                settings.webCaptureStatusMessage = "Web request failed: \(error.localizedDescription)"
+            }
             settings.isProcessing = false
         }
     }

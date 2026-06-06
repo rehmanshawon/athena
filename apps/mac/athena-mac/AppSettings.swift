@@ -26,6 +26,7 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var statusMessage: String = "Ready"
+    @Published var webCaptureStatusMessage: String = "Web request polling has not started."
     @Published var isProcessing: Bool = false
 
     private enum Keys {

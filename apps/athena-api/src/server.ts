@@ -235,6 +235,56 @@ app.post("/api/sessions/:sessionId/solve", async (req, res, next) => {
   }
 });
 
+app.post("/api/sessions/:sessionId/reset", async (req, res, next) => {
+  try {
+    const session = await getSession(req.params.sessionId);
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const timer = analysisTimers.get(session.id);
+    if (timer) {
+      clearTimeout(timer);
+      analysisTimers.delete(session.id);
+    }
+
+    removeCaptureRequestsForSession(session.id);
+    await Promise.all(
+      (session.captures || []).map(async (capture) => {
+        try {
+          await fs.unlink(capture.path);
+        } catch (error) {
+          const code = error && typeof error === "object" && "code" in error ? error.code : null;
+          if (code !== "ENOENT") {
+            throw error;
+          }
+        }
+      })
+    );
+
+    const resetSession: SolverSession = {
+      ...session,
+      updatedAt: new Date().toISOString(),
+      status: "collecting",
+      captures: [],
+      taskType: "UNKNOWN",
+      confidence: "low",
+      finalAnswer: "Screenshots cleared. Take a screenshot to start again.",
+      explanation: "",
+      copyReadyOutput: "",
+      rawModelOutput: "",
+      error: null,
+      prompt: ""
+    };
+
+    await saveSession(resetSession);
+    res.json(publicSession(resetSession));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : "Unexpected server error";
   res.status(500).json({ error: message });
@@ -343,6 +393,14 @@ function removeCaptureRequest(requestId: string) {
   const index = captureRequests.findIndex((request) => request.id === requestId);
   if (index >= 0) {
     captureRequests.splice(index, 1);
+  }
+}
+
+function removeCaptureRequestsForSession(sessionId: string) {
+  for (let index = captureRequests.length - 1; index >= 0; index -= 1) {
+    if (captureRequests[index]?.sessionId === sessionId) {
+      captureRequests.splice(index, 1);
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { Camera, Clipboard, Play, RefreshCw } from "lucide-react";
+import { Camera, Clipboard, Play, RefreshCw, Trash2 } from "lucide-react";
 import "./styles.css";
 
 type SessionStatus = "collecting" | "processing" | "completed" | "failed";
@@ -41,6 +41,7 @@ function App() {
   const [prompt, setPrompt] = React.useState("");
   const [isTakingScreenshot, setIsTakingScreenshot] = React.useState(false);
   const [isSolving, setIsSolving] = React.useState(false);
+  const [isResetting, setIsResetting] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -142,6 +143,31 @@ function App() {
     }
   }
 
+  async function resetSession() {
+    if (!session) {
+      return;
+    }
+
+    try {
+      setIsResetting(true);
+      setError(null);
+      const response = await fetch(`${apiUrl}/api/sessions/${session.id}/reset`, {
+        method: "POST"
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed: ${response.status}`);
+      }
+
+      setPrompt("");
+      setSession((await response.json()) as SolverSession);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reset screenshots");
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-paper text-ink">
       <section className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5 sm:px-6">
@@ -170,6 +196,15 @@ function App() {
             >
               <Play size={16} />
               {isSolving || session?.status === "processing" ? "Solving..." : "Solve Screenshots"}
+            </button>
+            <button
+              className="iconButton danger"
+              onClick={() => void resetSession()}
+              disabled={!session?.captures?.length || session.status === "processing" || isResetting}
+              aria-label="Reset screenshots"
+              title="Reset screenshots"
+            >
+              <Trash2 size={18} />
             </button>
           </div>
           <textarea

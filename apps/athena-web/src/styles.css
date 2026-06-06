@@ -29,6 +29,16 @@ body {
   transform: translateY(1px);
 }
 
+.iconButton.danger {
+  color: #b91c1c;
+}
+
+.iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .textButton {
   display: inline-flex;
   min-height: 36px;
